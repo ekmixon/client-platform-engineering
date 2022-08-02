@@ -47,18 +47,15 @@ def determine_state_and_nudge():
         # This is the old behavior
         if NUDGE_DISMISSED_COUNT < DISMISSAL_COUNT_THRESHOLD:
             nudgelog('Nudge dismissed count under threshold')
-            NUDGE_DISMISSED_COUNT += 1
             bring_nudge_to_forefront()
         else:
             # Get more aggressive - new behavior
             nudgelog('Nudge dismissed count over threshold')
-            NUDGE_DISMISSED_COUNT += 1
             nudgelog('Enforcing acceptable applications')
             # Loop through all the running applications
             for app in NSWorkspace.sharedWorkspace().runningApplications():
                 app_name = str(app.bundleIdentifier())
-                app_bundle = str(app.bundleURL())
-                if app_bundle:
+                if app_bundle := str(app.bundleURL()):
                     # The app bundle contains file://, quoted path and trailing slashes
                     app_bundle_path = unquote(urlparse(app_bundle).path).rstrip('\/')
                     # Add Software Update pane or macOS upgrade app to acceptable app list
@@ -77,6 +74,7 @@ def determine_state_and_nudge():
             bring_nudge_to_forefront()
             # Pretend to open the button and open the update mechanism
             button_update(True)
+        NUDGE_DISMISSED_COUNT += 1
     nudge.views['field.deferralcount'].setStringValue_(str(NUDGE_DISMISSED_COUNT))
 
 
@@ -138,17 +136,18 @@ def downloadfile(options):
 
     try:
         while not connection.isDone():
-            if connection.destination_path:
                 # only print progress info if we are writing to a file
-                if connection.percentComplete != -1:
-                    if connection.percentComplete != percent_complete:
-                        percent_complete = connection.percentComplete
-                        nudgelog(('Downloading %s - Percent complete: %s ' % (
-                            filename, percent_complete)))
-                elif connection.bytesReceived != bytes_received:
+            if connection.percentComplete != -1:
+                if (
+                    connection.destination_path
+                    and connection.percentComplete != percent_complete
+                ):
+                    percent_complete = connection.percentComplete
+                    nudgelog(f'Downloading {filename} - Percent complete: {percent_complete} ')
+            elif connection.bytesReceived != bytes_received:
+                if connection.destination_path:
                     bytes_received = connection.bytesReceived
-                    nudgelog(('Downloading %s - Bytes received: %s ' % (
-                        filename, bytes_received)))
+                    nudgelog(f'Downloading {filename} - Bytes received: {bytes_received} ')
 
     except (KeyboardInterrupt, SystemExit):
         # safely kill the connection then fall through
@@ -160,15 +159,17 @@ def downloadfile(options):
         raise
 
     if connection.error is not None:
-        nudgelog(('Error: %s %s ' % (str(connection.error.code()),
-                                  str(connection.error.localizedDescription()))))
+        nudgelog(
+            f'Error: {str(connection.error.code())} {str(connection.error.localizedDescription())} '
+        )
+
         if connection.SSLerror:
-            nudgelog('SSL error: %s ' % (str(connection.SSLerror)))
+            nudgelog(f'SSL error: {str(connection.SSLerror)} ')
     if connection.response is not None:
-        nudgelog('Status: %s ' % (str(connection.status)))
-        nudgelog('Headers: %s ' % (str(connection.headers)))
+        nudgelog(f'Status: {str(connection.status)} ')
+        nudgelog(f'Headers: {str(connection.headers)} ')
     if connection.redirection != []:
-        nudgelog('Redirection: %s ' % (str(connection.redirection)))
+        nudgelog(f'Redirection: {str(connection.redirection)} ')
 
 
 def get_console_username_info():
@@ -229,18 +230,15 @@ def get_serial():
                 ]
 
     objc.loadBundleFunctions(IOKit_bundle, globals(), functions)
-    # pylint: disable=undefined-variable
-    serial = IORegistryEntryCreateCFProperty(
+    # pylint: enable=undefined-variable
+    return IORegistryEntryCreateCFProperty(
         IOServiceGetMatchingService(
-            0,
-            IOServiceMatching(
-                "IOPlatformExpertDevice".encode("utf-8")
-            )),
+            0, IOServiceMatching("IOPlatformExpertDevice".encode("utf-8"))
+        ),
         Foundation.NSString.stringWithString_("IOPlatformSerialNumber"),
         None,
-        0)
-    # pylint: enable=undefined-variable
-    return serial
+        0,
+    )
 
 
 def load_nudge_globals():
@@ -262,18 +260,16 @@ def nudge_already_loaded():
     output, err = run.communicate()
     status = output.split(b'\n')
     current_pid = str(os.getpid())
-    for line in status:
-        if bytes(nudge_string, 'utf-8') in line:
-            if bytes(current_pid, 'utf-8') in line:
-                pass
-            else:
-                return True
-    return False
+    return any(
+        bytes(nudge_string, 'utf-8') in line
+        and bytes(current_pid, 'utf-8') not in line
+        for line in status
+    )
 
 
 def nudgelog(text):
     '''logger for nudge'''
-    Foundation.NSLog('[Nudge] ' + text)
+    Foundation.NSLog(f'[Nudge] {text}')
 
 
 def pref(pref_name, domain='com.erikng.nudge'):
@@ -327,7 +323,7 @@ def pending_apple_updates():
 def update_app_path():
     software_updates_prefpane = '/System/Library/PreferencePanes/SoftwareUpdate.prefPane'
     if os.path.exists(software_updates_prefpane):
-        return 'file://{}'.format(software_updates_prefpane)
+        return f'file://{software_updates_prefpane}'
     else:
         return 'macappstore://showUpdatesPage'
 
@@ -335,9 +331,7 @@ def update_app_path():
 def pkgregex(pkgpath):
     '''regular expression for pkg'''
     try:
-        # capture everything after last / in the pkg filepath
-        pkgname = re.compile(r"[^/]+$").search(pkgpath).group(0)
-        return pkgname
+        return re.compile(r"[^/]+$").search(pkgpath)[0]
     except AttributeError as IndexError:
         return pkgpath
 
@@ -352,7 +346,7 @@ def get_minimum_minor_update_days(update_minor_days, pending_apple_updates, nudg
     for item in nudge_su_prefs:
         for update in pending_apple_updates:
             if str(item['name']) == str(update['Product Key']):
-                nudgelog('{} has a forced date'.format(update['Product Key']))
+                nudgelog(f"{update['Product Key']} has a forced date")
                 force_date_strp = datetime.strptime(item['force_install_date'], '%Y-%m-%d-%H:%M')
                 date_diff_seconds = (force_date_strp - todays_date).total_seconds()
                 date_diff_days = int(round(date_diff_seconds / 86400))

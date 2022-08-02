@@ -16,7 +16,6 @@ def get_os_version():
 def has_dep_activation_record(plist_path):
     # We can't use -o stdout-xml due to another Apple bug :)
     good_record = '/private/var/db/ConfigurationProfiles/.cloudConfigRecordFound'
-    bad_record = '/private/var/db/ConfigurationProfiles/.cloudConfigRecordNotFound'
     if os.path.exists(plist_path):
         os.remove(plist_path)
     if get_os_version() >= LooseVersion('10.12'):
@@ -36,6 +35,7 @@ def has_dep_activation_record(plist_path):
         # Delete records in case it is already there.
         if os.path.isfile(good_record):
             os.remove(good_record)
+        bad_record = '/private/var/db/ConfigurationProfiles/.cloudConfigRecordNotFound'
         if os.path.isfile(bad_record):
             os.remove(bad_record)
         run = subprocess.Popen(cmd, preexec_fn=os.setpgrp)
@@ -46,31 +46,25 @@ def has_dep_activation_record(plist_path):
             plist = plistlib.readPlist(plist_path)
         except:  # noqa
             return False
-        if not plist:
-            return False
-        else:
-            return True
+        return bool(plist)
     elif get_os_version() >= LooseVersion('10.11') and get_os_version() < LooseVersion('10.12'):
-        # On 10.11 and lower, /usr/libexec/mdmclient dep nag returns the DEP
-        # config data on stderr!
-        if 'ConfigurationURL' in err:
-            # Make a fake plist with data :(
-            plist = {}
-            if get_os_version() >= LooseVersion('10.11'):
-                try:
-                    for line in err.split('\n'):
-                        if 'ConfigurationURL' in line:
-                            # Since this is some stupid output, strip it all
-                            strip_line = line.strip(' ').strip(';').strip('"')
-                            strip_line_value = strip_line.split(' = "')[-1]
-                            plist['ConfigurationURL'] = strip_line_value
-                            plistlib.writePlist(plist, plist_path)
-                            return True
-                except:
-                    return False
-            return True
-        else:
+        if 'ConfigurationURL' not in err:
             return False
+        # Make a fake plist with data :(
+        plist = {}
+        if get_os_version() >= LooseVersion('10.11'):
+            try:
+                for line in err.split('\n'):
+                    if 'ConfigurationURL' in line:
+                        # Since this is some stupid output, strip it all
+                        strip_line = line.strip(' ').strip(';').strip('"')
+                        strip_line_value = strip_line.split(' = "')[-1]
+                        plist['ConfigurationURL'] = strip_line_value
+                        plistlib.writePlist(plist, plist_path)
+                        return True
+            except:
+                return False
+        return True
     else:
         # 10.10 and lower
         cloud_config_exists = False
