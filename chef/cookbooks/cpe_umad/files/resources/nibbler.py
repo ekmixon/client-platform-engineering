@@ -28,8 +28,7 @@ TransformProcessType.argtypes = [POINTER(ProcessSerialNumber), c_uint32]
 def views_recursive(view_obj):
     yield view_obj
     for x in view_obj.subviews():
-        for y in views_recursive(x):
-            yield y
+        yield from views_recursive(x)
 
 
 def views_dict(nib_obj):
@@ -38,13 +37,12 @@ def views_dict(nib_obj):
     win = all_windows[0]
     # Now find all the views within the window where the identifier is defined
     top_view = win.contentView()
-    v_dict = dict()
+    v_dict = {}
     for v in views_recursive(top_view):
         ident = v.identifier()
-        if ident is not None:
-            if not ident.startswith('_'):
-                # Someone has customized it, remember it
-                v_dict[ident] = v
+        if ident is not None and not ident.startswith('_'):
+            # Someone has customized it, remember it
+            v_dict[ident] = v
     return v_dict
 
 

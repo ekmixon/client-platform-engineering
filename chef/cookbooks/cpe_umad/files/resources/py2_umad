@@ -170,19 +170,14 @@ def check_mdm_high_sierra_legacy():
 
 def check_mdm_status_modern():
     '''Only for 10.13.4 and higher'''
-    dep_enrolled = 'Enrolled via DEP: Yes'
-    # dep_not_enrolled = 'Enrolled via DEP: No'
-    uamdm_enrolled = 'MDM enrollment: Yes (User Approved)'
-    # uamdm_not_enroll = 'MDM enrollment: Yes'
-    mdm_not_enrolled = 'MDM enrollment: No'
     cmd = ['/usr/bin/profiles', 'status', '-type', 'enrollment']
     run = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, err = run.communicate()
     dep_status = output.split('\n')[0]
     mdm_status = output.split('\n')[1]
-    dep_enrollment_status = bool(dep_enrolled == dep_status)
-    mdm_enrollment_status = bool(mdm_not_enrolled != mdm_status)
-    uamdm_enrollment_status = bool(uamdm_enrolled == mdm_status)
+    dep_enrollment_status = dep_status == 'Enrolled via DEP: Yes'
+    mdm_enrollment_status = mdm_status != 'MDM enrollment: No'
+    uamdm_enrollment_status = mdm_status == 'MDM enrollment: Yes (User Approved)'
     return (dep_enrollment_status, mdm_enrollment_status,
             uamdm_enrollment_status)
 
@@ -269,19 +264,15 @@ def get_all_notifications_modern():
                 plist_data = plist['req']
                 date = row['delivered_date']
                 date_time = datetime.utcfromtimestamp(date + 978307200)
-                if date == None:
-                  # This avoids a type error for apps that put entries with
-                  # blank delivery dates in the notification DB for syncing purposes.
-                  # We don't care about those anyway.
-                  continue
+                if date is None:
+                    # This avoids a type error for apps that put entries with
+                    # blank delivery dates in the notification DB for syncing purposes.
+                    # We don't care about those anyway.
+                    continue
                 app = row['app']
                 title = plist_data.get('titl', '')
                 message = plist_data.get('body', '')
-                data = {}
-                data['app'] = app
-                data['date'] = date_time
-                data['message'] = message
-                data['title'] = title
+                data = {'app': app, 'date': date_time, 'message': message, 'title': title}
                 db_items.append(data)
             conn.close()
             return db_items
@@ -438,21 +429,20 @@ def get_serial():
         kio_master_port_default,
         IOServiceMatching("IOPlatformExpertDevice")
     )
-    serial = IORegistryEntryCreateCFProperty(
+    # pylint: enable=undefined-variable
+    return IORegistryEntryCreateCFProperty(
         platform_expert,
         kio_platform_serial_number_key,
         kcf_allocator_default,
-        0
+        0,
     )
-    # pylint: enable=undefined-variable
-    return serial
 
 
 def get_user_temp_dir():
     '''get user's temp dir'''
-    darwin_user_dir = subprocess.check_output(
-        ['/usr/bin/getconf', 'DARWIN_USER_DIR']).rstrip()
-    return darwin_user_dir
+    return subprocess.check_output(
+        ['/usr/bin/getconf', 'DARWIN_USER_DIR']
+    ).rstrip()
 
 
 def has_dep_activation_record(plist_path):
@@ -461,10 +451,7 @@ def has_dep_activation_record(plist_path):
         plist = plistlib.readPlist(plist_path)
     except:  # noqa
         plist = {}
-    if not plist:
-        return False
-    else:
-        return True
+    return bool(plist)
 
 
 def restart_notification_center():
@@ -494,13 +481,7 @@ def umad_already_loaded():
     output, err = run.communicate()
     status = output.split('\n')
     current_pid = str(os.getpid())
-    for line in status:
-        if umad_string in line:
-            if current_pid in line:
-                pass
-            else:
-                return True
-    return False
+    return any(umad_string in line and current_pid not in line for line in status)
 
 
 def touch(path):

@@ -256,7 +256,7 @@ class Gurl(NSObject):
                 # we have a partial file and we're allowed to resume
                 self.resume = True
                 local_filesize = os.path.getsize(self.destination_path)
-                byte_range = 'bytes=%s-' % local_filesize
+                byte_range = f'bytes={local_filesize}-'
                 request.setValue_forHTTPHeaderField_(byte_range, 'Range')
         if self.download_only_if_changed and not self.resume:
             stored_data = self.cache_data or self.getStoredHeaders()
@@ -322,9 +322,7 @@ class Gurl(NSObject):
             NSPropertyListSerialization.
             propertyListFromData_mutabilityOption_format_errorDescription_(
                 data, NSPropertyListMutableContainersAndLeaves, None, None))
-        if error:
-            return {}
-        return dataObject
+        return {} if error else dataObject
 
     def storeHeaders_(self, headers):
         '''Store dictionary data as an xattr for self.destination_path'''
@@ -342,30 +340,25 @@ class Gurl(NSObject):
         try:
             xattr.setxattr(self.destination_path, self.GURL_XATTR, byte_string)
         except IOError as err:
-            self.log('Could not store metadata to %s: %s'
-                     % (self.destination_path, err))
+            self.log(f'Could not store metadata to {self.destination_path}: {err}')
 
     def normalizeHeaderDict_(self, a_dict):
         '''Since HTTP header names are not case-sensitive, we normalize a
         dictionary of HTTP headers by converting all the key names to
         lower case'''
 
-        # yes, we don't use 'self'!
-        # pylint: disable=R0201
-
-        new_dict = {}
-        for key, value in a_dict.items():
-            new_dict[key.lower()] = value
-        return new_dict
+        return {key.lower(): value for key, value in a_dict.items()}
 
     def recordError_(self, error):
         '''Record any error info from completed connection/session'''
         self.error = error
         # If this was an SSL error, try to extract the SSL error code.
         if 'NSUnderlyingError' in error.userInfo():
-            ssl_code = error.userInfo()['NSUnderlyingError'].userInfo().get(
-                '_kCFNetworkCFStreamSSLErrorOriginalValue', None)
-            if ssl_code:
+            if (
+                ssl_code := error.userInfo()['NSUnderlyingError']
+                .userInfo()
+                .get('_kCFNetworkCFStreamSSLErrorOriginalValue', None)
+            ):
                 self.SSLerror = (ssl_code, ssl_error_codes.get(
                     ssl_code, 'Unknown SSL error'))
 
@@ -446,16 +439,15 @@ class Gurl(NSObject):
                     else:
                         # cancel the connection
                         self.connection.cancel()
-                    self.log('Removing %s' % self.destination_path)
+                    self.log(f'Removing {self.destination_path}')
                     os.unlink(self.destination_path)
                     # restart and attempt to download the entire file
-                    self.log(
-                        'Restarting download of %s' % self.destination_path)
+                    self.log(f'Restarting download of {self.destination_path}')
                     os.unlink(self.destination_path)
                     self.start()
                     return
                 # try to resume
-                self.log('Resuming download for %s' % self.destination_path)
+                self.log(f'Resuming download for {self.destination_path}')
                 # add existing file size to bytesReceived so far
                 local_filesize = os.path.getsize(self.destination_path)
                 self.bytesReceived = local_filesize
@@ -518,7 +510,7 @@ class Gurl(NSObject):
             # all in this scenario, unlike NSConnectionDelegate method
             # connection:willSendRequest:redirectResponse:
             # we'll leave this here anyway in case we're wrong about that
-            self.log('Allowing redirect to: %s' % newURL)
+            self.log(f'Allowing redirect to: {newURL}')
             return allowRedirect()
         # If we get here, it appears to be a real redirect attempt
         # Annoyingly, we apparently can't get access to the headers from the
@@ -530,17 +522,17 @@ class Gurl(NSObject):
         # (https://github.com/munki/munki/pull/465)
         if self.follow_redirects is True or self.follow_redirects == 'all':
             # Allow the redirect
-            self.log('Allowing redirect to: %s' % newURL)
+            self.log(f'Allowing redirect to: {newURL}')
             return allowRedirect()
         elif (self.follow_redirects == 'https'
               and newParsedURL.scheme == 'https'):
             # Once again, allow the redirect
-            self.log('Allowing redirect to: %s' % newURL)
+            self.log(f'Allowing redirect to: {newURL}')
             return allowRedirect()
         # If we're down here either the preference was set to 'none',
         # the url we're forwarding on to isn't https or follow_redirects
         # was explicitly set to False
-        self.log('Denying redirect to: %s' % newURL)
+        self.log(f'Denying redirect to: {newURL}')
         return denyRedirect()
 
     # we don't control the API, so
@@ -578,8 +570,10 @@ class Gurl(NSObject):
             host = protectionSpace.host()
             realm = protectionSpace.realm()
             authenticationMethod = protectionSpace.authenticationMethod()
-            self.log('Protection space found. Host: %s Realm: %s AuthMethod: %s'
-                     % (host, realm, authenticationMethod))
+            self.log(
+                f'Protection space found. Host: {host} Realm: {realm} AuthMethod: {authenticationMethod}'
+            )
+
             if self.username and self.password and authenticationMethod in [
                     'NSURLAuthenticationMethodDefault',
                     'NSURLAuthenticationMethodHTTPBasic',
@@ -599,8 +593,9 @@ class Gurl(NSObject):
         realm = protectionSpace.realm()
         authenticationMethod = protectionSpace.authenticationMethod()
         self.log(
-            'Authentication challenge for Host: %s Realm: %s AuthMethod: %s'
-            % (host, realm, authenticationMethod))
+            f'Authentication challenge for Host: {host} Realm: {realm} AuthMethod: {authenticationMethod}'
+        )
+
         if challenge.previousFailureCount() > 0:
             # we have the wrong credentials. just fail
             self.log('Previous authentication attempt failed.')
@@ -615,8 +610,10 @@ class Gurl(NSObject):
                 'NSURLAuthenticationMethodHTTPBasic',
                 'NSURLAuthenticationMethodHTTPDigest']:
             self.log('Will attempt to authenticate.')
-            self.log('Username: %s Password: %s'
-                     % (self.username, ('*' * len(self.password or ''))))
+            self.log(
+                f"Username: {self.username} Password: {'*' * len(self.password or '')}"
+            )
+
             credential = (
                 NSURLCredential.credentialWithUser_password_persistence_(
                     self.username, self.password,
@@ -633,20 +630,19 @@ class Gurl(NSObject):
             if completionHandler:
                 completionHandler(
                     NSURLSessionAuthChallengePerformDefaultHandling, None)
-            else:
-                if (challenge.sender().respondsToSelector_(
+            elif (challenge.sender().respondsToSelector_(
                         'performDefaultHandlingForAuthenticationChallenge:')):
-                    self.log('Allowing OS to handle authentication request')
-                    challenge.sender(
-                        ).performDefaultHandlingForAuthenticationChallenge_(
-                            challenge)
-                else:
-                    # Mac OS X 10.6 doesn't support
-                    # performDefaultHandlingForAuthenticationChallenge:
-                    self.log('Continuing without credential.')
-                    challenge.sender(
-                        ).continueWithoutCredentialForAuthenticationChallenge_(
-                            challenge)
+                self.log('Allowing OS to handle authentication request')
+                challenge.sender(
+                    ).performDefaultHandlingForAuthenticationChallenge_(
+                        challenge)
+            else:
+                # Mac OS X 10.6 doesn't support
+                # performDefaultHandlingForAuthenticationChallenge:
+                self.log('Continuing without credential.')
+                challenge.sender(
+                    ).continueWithoutCredentialForAuthenticationChallenge_(
+                        challenge)
 
     def connection_willSendRequestForAuthenticationChallenge_(
             self, _connection, challenge):
